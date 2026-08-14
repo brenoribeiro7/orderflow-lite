@@ -26,7 +26,7 @@ def get_db_session() -> Iterator[Session]:
     """Provide one Session and always close it after the request.
 
     This dependency deliberately does not commit. Transaction boundaries belong to
-    the use case that owns the future write operation.
+    the use case that owns the write operation.
     """
 
     with SessionFactory() as session:

@@ -11,7 +11,7 @@ from orderflow.api.products import router as products_router
 def create_app() -> FastAPI:
     """Build the OrderFlow Lite HTTP application."""
 
-    application = FastAPI(title="OrderFlow Lite", version="0.1.0")
+    application = FastAPI(title="OrderFlow Lite", version="1.0.0")
     install_error_handlers(application)
     application.include_router(health_router)
     application.include_router(products_router)
