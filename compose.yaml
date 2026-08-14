@@ -1,0 +1,21 @@
+services:
+  postgres:
+    image: postgres:18.6
+    environment:
+      POSTGRES_DB: orderflow
+      POSTGRES_USER: orderflow
+      POSTGRES_PASSWORD: orderflow
+    ports:
+      - "127.0.0.1:55432:5432"
+    volumes:
+      - orderflow_postgres_data:/var/lib/postgresql
+      - ./docker/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U orderflow -d orderflow"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+
+volumes:
+  orderflow_postgres_data:

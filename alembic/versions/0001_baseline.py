@@ -1,0 +1,20 @@
+"""Establish the migration chain without creating domain tables.
+
+Revision ID: 0001_baseline
+Revises:
+"""
+
+from collections.abc import Sequence
+
+revision: str = "0001_baseline"
+down_revision: str | Sequence[str] | None = None
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
+
+
+def upgrade() -> None:
+    """Establish the M1 baseline; domain schema starts in M2."""
+
+
+def downgrade() -> None:
+    """Remove the no-op M1 baseline marker."""
