@@ -1,26 +1,34 @@
 # OrderFlow Lite
 
-OrderFlow Lite is a compact order and inventory API whose v1.0 scope focuses on
-creating products, assembling pending orders, and confirming orders with safe stock
-updates. The current repository contains the reproducible application and database
-foundation; the order flow itself is planned for later phases.
+OrderFlow Lite is a compact order and inventory API. Its v1.0 scope covers product
+creation, complete pending orders, and confirmation with safe stock accounting. M2
+implements the sequential core flow; concurrency hardening and idempotency remain
+explicitly reserved for M3.
 
 ## Status
 
-Implemented in M1:
+Implemented through M2:
 
-- synchronous FastAPI application with `/health` and PostgreSQL-backed `/ready`;
-- synchronous SQLAlchemy engine and request-scoped `Session` lifecycle;
-- Alembic integration with a no-op baseline revision;
-- PostgreSQL 18.6 development and test databases through Docker Compose;
-- pytest, Ruff, mypy, and GitHub Actions foundations.
+- synchronous FastAPI application with PostgreSQL liveness/readiness probes;
+- Product, Order, and OrderItem persistence with database constraints;
+- `Decimal`/`NUMERIC(18,2)` money and immutable item price snapshots;
+- atomic pending-order creation and derived line/order totals;
+- sequential transactional confirmation with all-stock validation before debit;
+- dedicated PostgreSQL integration tests, migrations, lint, typing, and CI.
 
-Planned for M2/M3:
+Planned for M3:
 
-- product creation and stock representation;
-- complete pending-order creation and confirmation;
-- atomic stock debit, price snapshots, and order totals;
-- idempotent order creation and concurrency controls.
+- pessimistic row locking during confirmation;
+- protection against concurrent consumption of the same stock;
+- mandatory `Idempotency-Key`, canonical request fingerprint, and replay behavior for
+  order creation.
+
+Order creation idempotency is planned for M3 and is not yet part of the implemented M2
+contract. `POST /api/v1/orders` does not accept an idempotency header as a guaranteed
+feature in M2.
+
+Post-v1.0 work may revisit capabilities that are explicitly outside the current scope;
+none are presented as part of this release line.
 
 ## Stack
 
@@ -48,9 +56,9 @@ docker compose up -d
 docker compose ps
 ```
 
-The Compose project runs PostgreSQL only. On the first initialization it creates
-`orderflow` for development and the isolated `orderflow_test` database for tests.
-PostgreSQL is published on `127.0.0.1:55432`; the API runs directly on the host.
+Compose runs PostgreSQL only. On first initialization it creates `orderflow` for
+development and the isolated `orderflow_test` database for tests. PostgreSQL is
+published on `127.0.0.1:55432`; the API runs directly on the host.
 
 The example credentials are local-only and are not intended for shared or production
 environments. `.env` is ignored by Git.
@@ -59,18 +67,20 @@ environments. `.env` is ignored by Git.
 
 `APP_ENV` identifies the runtime environment. `DATABASE_URL` is used by the API and
 Alembic. `TEST_DATABASE_URL` selects the dedicated test database; the test bootstrap
-refuses any database name other than `orderflow_test`.
+refuses any database name other than `orderflow_test` before running destructive test
+cleanup.
 
 ## Migrations
 
-Apply all migrations to the configured development database:
+Apply the migration chain to the configured development database:
 
 ```bash
 uv run alembic upgrade head
 ```
 
-The M1 `0001_baseline` revision intentionally creates no domain tables. It establishes
-the migration chain so that the M2 schema can be introduced explicitly.
+- `0001_baseline` establishes Alembic without domain tables.
+- `0002_core_order_flow` creates `products`, `orders`, and `order_items` with their
+  persistent invariants.
 
 ## Run the API
 
@@ -78,9 +88,54 @@ the migration chain so that the M2 schema can be introduced explicitly.
 uv run uvicorn orderflow.app:app --reload
 ```
 
-- `GET /health` reports process liveness and does not access PostgreSQL.
-- `GET /ready` executes a minimal PostgreSQL query, returning `200` when ready and a
-  sanitized `503` response when the database is unavailable.
+Implemented functional endpoints:
+
+```text
+POST /api/v1/products
+GET  /api/v1/products/{product_id}
+POST /api/v1/orders
+GET  /api/v1/orders/{order_id}
+POST /api/v1/orders/{order_id}/confirm
+```
+
+Operational endpoints:
+
+- `GET /health` reports process liveness without accessing PostgreSQL.
+- `GET /ready` executes a minimal PostgreSQL query and returns a sanitized `503` when
+  the database is unavailable.
+
+Example product payload:
+
+```json
+{
+  "sku": "SKU-001",
+  "name": "Mechanical Keyboard",
+  "unit_price": "349.90",
+  "stock_quantity": 5
+}
+```
+
+Example order payload:
+
+```json
+{
+  "items": [
+    {
+      "product_id": "00000000-0000-0000-0000-000000000000",
+      "quantity": 2
+    }
+  ]
+}
+```
+
+The client never supplies item prices. Each OrderItem captures the Product price when
+the order is created. Line totals and the order total are derived at response time and
+are not persisted.
+
+M2 implements sequential transactional order confirmation. Concurrent stock protection
+and request idempotency are deferred to M3. The M2 confirmation flow is transactionally
+correct for sequential execution but is not yet hardened against concurrent stock
+consumption.
 
 ## Tests and quality
 
@@ -93,14 +148,14 @@ uv run ruff format --check .
 uv run mypy src tests
 ```
 
-Tests use real PostgreSQL rather than SQLite so migration and readiness behavior match
-the production database engine.
+Tests use real PostgreSQL rather than SQLite so migrations, constraints, transactions,
+and readiness behavior exercise the selected production database engine.
 
 ## Delivery phases
 
 - M0 — Scope + Stack: completed
-- M1 — Foundation: implemented in this repository state
-- M2 — Core Order Flow: planned
+- M1 — Foundation: completed
+- M2 — Core Order Flow: implemented in the current branch
 - M3 — Consistency + Idempotency: planned
 - M4 — Hardening + v1.0.0: planned
 
@@ -108,6 +163,6 @@ There is no M5.
 
 ## Out of scope
 
-The v1.0 scope excludes authentication, users, payments, frontend applications,
-Redis, background workers, event buses, microservices, deployment automation, and
-advanced observability.
+The current v1.0 scope excludes cancellation, product/order list or update endpoints,
+authentication, users, payments, frontend applications, Redis, background workers,
+event buses, microservices, deployment automation, and advanced observability.
