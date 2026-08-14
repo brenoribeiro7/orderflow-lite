@@ -1,37 +1,52 @@
 # Architecture
 
-## Current foundation
+## Architecture style
 
 OrderFlow Lite is a small modular monolith using synchronous FastAPI, synchronous
 SQLAlchemy `Session` objects, and PostgreSQL. The API runs on the host while Docker
-Compose runs only PostgreSQL. M1 implements infrastructure and probes; it does not
-implement domain models or order behavior.
+Compose runs only PostgreSQL.
 
-Each request or use case receives its own SQLAlchemy `Session`. The FastAPI dependency
-closes the session but never commits it. Future transactional use cases will own their
-commit and rollback boundaries. `pool_pre_ping` avoids handing stale pooled connections
-to a request.
+Each request or use case receives its own SQLAlchemy Session. The FastAPI dependency
+closes the session but never commits it. Write services own their transaction boundaries;
+routers handle HTTP contracts and response mapping. No repository framework hides
+SQLAlchemy.
 
-## Approved target flow
+## Implemented in M2
 
-The following is an M0 decision reserved for M2/M3 implementation:
+The relational domain consists of Product, Order, and OrderItem. Orders have exactly two
+states: `PENDING` and `CONFIRMED`. A database constraint keeps `confirmed_at` null only
+for pending orders and non-null only for confirmed orders.
+
+Money uses `Decimal` in Python and `NUMERIC(18,2)` in PostgreSQL. The consumer never
+supplies an item price: `OrderItem.unit_price` captures `Product.unit_price` when the
+order is created. `line_total` and `total_amount` are derived from snapshots and are not
+persisted.
+
+Order creation atomically loads every referenced Product, rejects missing or duplicated
+products, and writes the pending Order with every OrderItem. It does not change stock.
+
+Sequential confirmation runs in one service-owned transaction:
 
 ```text
-create product
-→ create PENDING order with all items
-→ confirm
-→ debit stock atomically
-→ CONFIRMED
+load order and items
+→ require PENDING
+→ load referenced products
+→ validate every stock quantity
+→ debit all products
+→ mark CONFIRMED and set confirmed_at/updated_at
+→ commit
 ```
 
-Orders have two target states: `PENDING` and `CONFIRMED`.
+Validating every product before the first mutation prevents partial stock debit when one
+line is insufficient. A repeated confirmation is rejected before another debit.
 
-Money will use `Decimal` in Python and `NUMERIC(18,2)` in PostgreSQL. `OrderItem` will
-store a price snapshot so later product price changes do not rewrite order history.
+## Reserved for M3
 
-## Future confirmation transaction
+M2 deliberately performs no pessimistic or optimistic locking. Its confirmation is
+transactionally correct for sequential execution but is not yet hardened against
+concurrent stock consumption.
 
-The approved confirmation sequence, not yet implemented, is:
+The approved M3 confirmation strategy remains:
 
 ```text
 order FOR UPDATE
@@ -43,17 +58,17 @@ order FOR UPDATE
 ```
 
 Concurrency will use PostgreSQL `READ COMMITTED` together with pessimistic row locking.
-Ordering product locks by identifier provides a consistent acquisition order.
+M3 will prove behavior when concurrent requests compete for the final stock unit.
 
-## Future idempotency
-
-Idempotency is planned only for `POST /api/v1/orders`. It will use `Idempotency-Key`, a
-SHA-256 fingerprint of the canonical request, a database unique constraint, and a
-reference to the created resource. No idempotency implementation exists in M1.
+Order creation idempotency is also reserved for M3. The approved design applies only to
+`POST /api/v1/orders` and uses a mandatory `Idempotency-Key`, a SHA-256 canonical request
+fingerprint, an IdempotencyRecord with database unique arbitration, replay behavior, and
+a reference to the created resource. None of that is part of the implemented M2
+contract.
 
 ## Scope boundaries
 
-M1 excludes Product, Order, OrderItem, and IdempotencyRecord models; product and order
-endpoints; totals; stock behavior; functional row locking; and business-schema
-migrations. The broader v1.0 excludes authentication, users, payments, frontends,
-Redis, workers, event buses, microservices, and deployment.
+M2 excludes `SELECT ... FOR UPDATE`, optimistic locking, conditional stock updates,
+deadlock retries, idempotency records or middleware, cancellation, restocking, list or
+update endpoints, authentication, users, payments, frontends, Redis, workers, event
+buses, microservices, and deployment.
