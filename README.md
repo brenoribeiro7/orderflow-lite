@@ -1,31 +1,26 @@
 # OrderFlow Lite
 
 OrderFlow Lite is a compact order and inventory API. Its v1.0 scope covers product
-creation, complete pending orders, and confirmation with safe stock accounting. M2
-implements the sequential core flow; concurrency hardening and idempotency remain
-explicitly reserved for M3.
+creation, complete pending orders, and confirmation with safe stock accounting. M3
+hardens the core flow for concurrent confirmation and duplicate order-creation requests.
 
 ## Status
 
-Implemented through M2:
+Implemented through M3:
 
 - synchronous FastAPI application with PostgreSQL liveness/readiness probes;
 - Product, Order, and OrderItem persistence with database constraints;
 - `Decimal`/`NUMERIC(18,2)` money and immutable item price snapshots;
 - atomic pending-order creation and derived line/order totals;
-- sequential transactional confirmation with all-stock validation before debit;
+- concurrent-safe confirmation using deterministic pessimistic row locking;
+- persistent order-creation idempotency with canonical request fingerprints;
 - dedicated PostgreSQL integration tests, migrations, lint, typing, and CI.
 
-Planned for M3:
+Planned for M4:
 
-- pessimistic row locking during confirmation;
-- protection against concurrent consumption of the same stock;
-- mandatory `Idempotency-Key`, canonical request fingerprint, and replay behavior for
-  order creation.
-
-Order creation idempotency is planned for M3 and is not yet part of the implemented M2
-contract. `POST /api/v1/orders` does not accept an idempotency header as a guaranteed
-feature in M2.
+- final hardening and documentation review;
+- complete release validation;
+- v1.0.0 release preparation.
 
 Post-v1.0 work may revisit capabilities that are explicitly outside the current scope;
 none are presented as part of this release line.
@@ -81,6 +76,8 @@ uv run alembic upgrade head
 - `0001_baseline` establishes Alembic without domain tables.
 - `0002_core_order_flow` creates `products`, `orders`, and `order_items` with their
   persistent invariants.
+- `0003_consistency_idempotency` creates only `idempotency_records` for successful
+  order-creation requests.
 
 ## Run the API
 
@@ -128,14 +125,30 @@ Example order payload:
 }
 ```
 
+Order creation requires an opaque idempotency key:
+
+```http
+POST /api/v1/orders HTTP/1.1
+Idempotency-Key: order-create-123
+Content-Type: application/json
+```
+
+- the first successful request returns `201`;
+- the same key and semantically equivalent request return `200` and the same Order;
+- the same key with a different request returns `409 IDEMPOTENCY_KEY_REUSED`;
+- an attempt that fails before commit does not reserve the key.
+
+Idempotency records are retained indefinitely in v1.0. A replay follows the stored
+resource reference and therefore returns the current representation of the Order, not a
+stored copy of the original HTTP response.
+
 The client never supplies item prices. Each OrderItem captures the Product price when
 the order is created. Line totals and the order total are derived at response time and
 are not persisted.
 
-M2 implements sequential transactional order confirmation. Concurrent stock protection
-and request idempotency are deferred to M3. The M2 confirmation flow is transactionally
-correct for sequential execution but is not yet hardened against concurrent stock
-consumption.
+Confirmation runs at PostgreSQL `READ COMMITTED`, locks the Order first, then locks every
+referenced Product in ascending Product ID order. Stock is validated for every line
+before the atomic debit, preventing overselling and duplicate concurrent confirmation.
 
 ## Tests and quality
 
@@ -155,8 +168,8 @@ and readiness behavior exercise the selected production database engine.
 
 - M0 — Scope + Stack: completed
 - M1 — Foundation: completed
-- M2 — Core Order Flow: implemented in the current branch
-- M3 — Consistency + Idempotency: planned
+- M2 — Core Order Flow: completed
+- M3 — Consistency + Idempotency: implemented in the current branch
 - M4 — Hardening + v1.0.0: planned
 
 There is no M5.

@@ -11,7 +11,7 @@ closes the session but never commits it. Write services own their transaction bo
 routers handle HTTP contracts and response mapping. No repository framework hides
 SQLAlchemy.
 
-## Implemented in M2
+## Implemented through M3
 
 The relational domain consists of Product, Order, and OrderItem. Orders have exactly two
 states: `PENDING` and `CONFIRMED`. A database constraint keeps `confirmed_at` null only
@@ -24,51 +24,61 @@ persisted.
 
 Order creation atomically loads every referenced Product, rejects missing or duplicated
 products, and writes the pending Order with every OrderItem. It does not change stock.
+The same transaction stores an IdempotencyRecord for the mandatory `Idempotency-Key`.
 
-Sequential confirmation runs in one service-owned transaction:
+## Confirmation transaction
+
+Confirmation runs in one service-owned `READ COMMITTED` transaction:
 
 ```text
-load order and items
+lock Order FOR UPDATE
 → require PENDING
-→ load referenced products
+→ load immutable OrderItems
+→ lock Products by Product.id ASC FOR UPDATE
 → validate every stock quantity
 → debit all products
 → mark CONFIRMED and set confirmed_at/updated_at
 → commit
 ```
 
-Validating every product before the first mutation prevents partial stock debit when one
-line is insufficient. A repeated confirmation is rejected before another debit.
-
-## Reserved for M3
-
-M2 deliberately performs no pessimistic or optimistic locking. Its confirmation is
-transactionally correct for sequential execution but is not yet hardened against
-concurrent stock consumption.
-
-The approved M3 confirmation strategy remains:
+The lock order is always:
 
 ```text
-order FOR UPDATE
-→ products ordered by id FOR UPDATE
-→ validate stock
-→ decrement stock
-→ mark confirmed
-→ commit
+Order
+→ Products sorted by Product.id
 ```
 
-Concurrency will use PostgreSQL `READ COMMITTED` together with pessimistic row locking.
-M3 will prove behavior when concurrent requests compete for the final stock unit.
+Locking the Order before checking its state prevents two confirmations from observing the
+same pending state. Ordering Product locks avoids payload-dependent acquisition order,
+while validating every stock quantity before mutation prevents partial debit. Any error
+before commit rolls the whole operation back.
 
-Order creation idempotency is also reserved for M3. The approved design applies only to
-`POST /api/v1/orders` and uses a mandatory `Idempotency-Key`, a SHA-256 canonical request
-fingerprint, an IdempotencyRecord with database unique arbitration, replay behavior, and
-a reference to the created resource. None of that is part of the implemented M2
-contract.
+No optimistic version column, conditional stock update, advisory lock, automatic retry,
+or stronger isolation level is combined with this strategy.
+
+## Order creation idempotency
+
+Idempotency applies only to `POST /api/v1/orders`. The fingerprint is derived solely from
+the validated client payload: canonical UUIDs and integer quantities are sorted by
+Product ID, serialized as deterministic JSON, and hashed with SHA-256. Price, stock,
+timestamps, status, database state, and the key itself are excluded.
+
+The IdempotencyRecord primary key is the concurrency arbiter. A unique-key loser fully
+rolls back its attempted Order before opening a new transaction to load the winner:
+
+```text
+same key + same fingerprint → replay
+same key + different fingerprint → 409 conflict
+```
+
+The record stores a resource reference rather than a response body, so replay returns
+the current representation of the same Order, including a later confirmation. Failed
+attempts leave no record. Retention is indefinite in v1.0; there is no expiration or
+cleanup process.
 
 ## Scope boundaries
 
-M2 excludes `SELECT ... FOR UPDATE`, optimistic locking, conditional stock updates,
-deadlock retries, idempotency records or middleware, cancellation, restocking, list or
-update endpoints, authentication, users, payments, frontends, Redis, workers, event
-buses, microservices, and deployment.
+M3 excludes optimistic locking, conditional stock updates, deadlock retries, generic
+idempotency middleware, expiration or cleanup, cancellation, restocking, list or update
+endpoints, authentication, users, payments, frontends, Redis, workers, event buses,
+microservices, and deployment.

@@ -9,7 +9,11 @@ from orderflow.config import get_settings
 
 settings = get_settings()
 
-engine = create_engine(settings.database_url, pool_pre_ping=True)
+engine = create_engine(
+    settings.database_url,
+    pool_pre_ping=True,
+    isolation_level="READ COMMITTED",
+)
 SessionFactory = sessionmaker(
     bind=engine,
     class_=Session,
