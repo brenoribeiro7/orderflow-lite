@@ -8,10 +8,11 @@ from sqlalchemy.engine import Connection
 
 from orderflow.config import get_settings
 from orderflow.db.base import Base
+from orderflow.idempotency import model as idempotency_models
 from orderflow.orders import model as order_models
 from orderflow.products import model as product_models
 
-_ = (order_models, product_models)
+_ = (idempotency_models, order_models, product_models)
 
 config = context.config
 

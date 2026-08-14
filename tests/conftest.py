@@ -50,7 +50,8 @@ def clean_test_database(migrate_test_database: None) -> Iterator[None]:
     with engine.begin() as connection:
         connection.execute(
             text(
-                "TRUNCATE TABLE order_items, orders, products RESTART IDENTITY CASCADE"
+                "TRUNCATE TABLE idempotency_records, order_items, orders, products "
+                "RESTART IDENTITY CASCADE"
             )
         )
     yield

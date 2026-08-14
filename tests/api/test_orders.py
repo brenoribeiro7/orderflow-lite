@@ -34,7 +34,11 @@ def create_order(
     client: TestClient,
     items: list[dict[str, object]],
 ) -> dict[str, object]:
-    response = client.post("/api/v1/orders", json={"items": items})
+    response = client.post(
+        "/api/v1/orders",
+        json={"items": items},
+        headers={"Idempotency-Key": uuid4().hex},
+    )
     assert response.status_code == 201
     return cast(dict[str, object], response.json())
 
@@ -84,6 +88,7 @@ def test_missing_product_rolls_back_entire_order(client: TestClient) -> None:
     response = client.post(
         "/api/v1/orders",
         json={"items": [{"product_id": str(uuid4()), "quantity": 1}]},
+        headers={"Idempotency-Key": uuid4().hex},
     )
 
     assert response.status_code == 404
@@ -93,7 +98,11 @@ def test_missing_product_rolls_back_entire_order(client: TestClient) -> None:
 
 
 def test_empty_order_is_rejected(client: TestClient) -> None:
-    response = client.post("/api/v1/orders", json={"items": []})
+    response = client.post(
+        "/api/v1/orders",
+        json={"items": []},
+        headers={"Idempotency-Key": uuid4().hex},
+    )
 
     assert response.status_code == 422
     assert response.json()["error"]["code"] == "VALIDATION_ERROR"
@@ -103,7 +112,11 @@ def test_duplicate_product_in_order_is_rejected(client: TestClient) -> None:
     product = create_product(client, sku="DUP")
     item = {"product_id": product["id"], "quantity": 1}
 
-    response = client.post("/api/v1/orders", json={"items": [item, item]})
+    response = client.post(
+        "/api/v1/orders",
+        json={"items": [item, item]},
+        headers={"Idempotency-Key": uuid4().hex},
+    )
 
     assert response.status_code == 422
     assert response.json()["error"]["code"] == "VALIDATION_ERROR"
