@@ -11,7 +11,7 @@ closes the session but never commits it. Write services own their transaction bo
 routers handle HTTP contracts and response mapping. No repository framework hides
 SQLAlchemy.
 
-## Implemented through M3
+## Domain and invariants
 
 The relational domain consists of Product, Order, and OrderItem. Orders have exactly two
 states: `PENDING` and `CONFIRMED`. A database constraint keeps `confirmed_at` null only
@@ -78,7 +78,7 @@ cleanup process.
 
 ## Scope boundaries
 
-M3 excludes optimistic locking, conditional stock updates, deadlock retries, generic
-idempotency middleware, expiration or cleanup, cancellation, restocking, list or update
-endpoints, authentication, users, payments, frontends, Redis, workers, event buses,
-microservices, and deployment.
+The v1.0 scope excludes optimistic locking, conditional stock updates, deadlock retries,
+generic idempotency middleware, expiration or cleanup, cancellation, restocking, list
+or update endpoints, authentication, users, payments, frontends, Redis, workers, event
+buses, microservices, and deployment.

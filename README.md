@@ -1,12 +1,13 @@
 # OrderFlow Lite
 
 OrderFlow Lite is a compact order and inventory API. Its v1.0 scope covers product
-creation, complete pending orders, and confirmation with safe stock accounting. M3
-hardens the core flow for concurrent confirmation and duplicate order-creation requests.
+creation, complete pending orders, and confirmation with safe stock accounting. It
+demonstrates relational modeling, PostgreSQL constraints, explicit transactions,
+concurrency safety, and persistent request idempotency in a focused backend.
 
 ## Status
 
-Implemented through M3:
+The v1.0.0 scope is complete:
 
 - synchronous FastAPI application with PostgreSQL liveness/readiness probes;
 - Product, Order, and OrderItem persistence with database constraints;
@@ -15,12 +16,6 @@ Implemented through M3:
 - concurrent-safe confirmation using deterministic pessimistic row locking;
 - persistent order-creation idempotency with canonical request fingerprints;
 - dedicated PostgreSQL integration tests, migrations, lint, typing, and CI.
-
-Planned for M4:
-
-- final hardening and documentation review;
-- complete release validation;
-- v1.0.0 release preparation.
 
 Post-v1.0 work may revisit capabilities that are explicitly outside the current scope;
 none are presented as part of this release line.
@@ -169,8 +164,8 @@ and readiness behavior exercise the selected production database engine.
 - M0 — Scope + Stack: completed
 - M1 — Foundation: completed
 - M2 — Core Order Flow: completed
-- M3 — Consistency + Idempotency: implemented in the current branch
-- M4 — Hardening + v1.0.0: planned
+- M3 — Consistency + Idempotency: completed
+- M4 — Hardening + v1.0.0: completed
 
 There is no M5.
 

@@ -1,4 +1,4 @@
-"""Declarative metadata shared by future domain models and Alembic."""
+"""Declarative metadata shared by the domain models and Alembic."""
 
 from datetime import UTC, datetime
 

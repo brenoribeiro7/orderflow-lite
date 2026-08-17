@@ -54,6 +54,6 @@ def confirm_order_endpoint(
     order_id: UUID,
     session: Annotated[Session, Depends(get_db_session)],
 ) -> OrderResponse:
-    """Confirm an order with sequential transactional stock debit."""
+    """Confirm an order with concurrency-safe transactional stock debit."""
 
     return OrderResponse.from_order(confirm_order(session, order_id))
